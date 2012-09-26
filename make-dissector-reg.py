@@ -9,7 +9,7 @@
 # seds for each input file.  I wrote this python version so that
 # less processes would have to be started.
 #
-# $Id$
+# $Id: make-dissector-reg.py 30447 2009-10-09 20:47:18Z krj $
 
 import os
 import sys
@@ -18,7 +18,7 @@ import pickle
 from stat import *
 
 VERSION_KEY = '_VERSION'
-CUR_VERSION = '$Id$'
+CUR_VERSION = '$Id: make-dissector-reg.py 30447 2009-10-09 20:47:18Z krj $'
 
 #
 # The first argument is the directory in which the source files live.
@@ -59,7 +59,7 @@ elif registertype == "dissectors":
  */
 """
 else:
-	print(("Unknown output type '%s'" % registertype))
+	print "Unknown output type '%s'" % registertype
 	sys.exit(1)
 
 
@@ -77,32 +77,38 @@ for file in files:
 		filenames.append(os.path.join(srcdir, file))
 
 if len(filenames) < 1:
-	print("No files found")
+	print "No files found"
 	sys.exit(1)
 
 
 # Look through all files, applying the regex to each line.
 # If the pattern matches, save the "symbol" section to the
-# appropriate set.
+# appropriate array.
 regs = {
-	'proto_reg': set(),
-	'handoff_reg': set(),
-	'wtap_register': set(),
+	'proto_reg': [],
+	'handoff_reg': [],
+	'wtap_register': [],
 	}
 
 # For those that don't know Python, r"" indicates a raw string,
 # devoid of Python escapes.
-proto_regex = r"(?P<symbol>proto_register_[_A-Za-z0-9]+)\s*\(\s*void\s*\)[^;]*$"
+proto_regex0 = r"^(?P<symbol>proto_register_[_A-Za-z0-9]+)\s*\([^;]+$"
+proto_regex1 = r"void\s+(?P<symbol>proto_register_[_A-Za-z0-9]+)\s*\([^;]+$"
 
-handoff_regex = r"(?P<symbol>proto_reg_handoff_[_A-Za-z0-9]+)\s*\(\s*void\s*\)[^;]*$"
+handoff_regex0 = r"^(?P<symbol>proto_reg_handoff_[_A-Za-z0-9]+)\s*\([^;]+$"
+handoff_regex1 = r"void\s+(?P<symbol>proto_reg_handoff_[_A-Za-z0-9]+)\s*\([^;]+$"
 
-wtap_reg_regex = r"(?P<symbol>wtap_register_[_A-Za-z0-9]+)\s*\([^;]+$"
+wtap_reg_regex0 = r"^(?P<symbol>wtap_register_[_A-Za-z0-9]+)\s*\([^;]+$"
+wtap_reg_regex1 = r"void\s+(?P<symbol>wtap_register_[_A-Za-z0-9]+)\s*\([^;]+$"
 
 # This table drives the pattern-matching and symbol-harvesting
 patterns = [
-	( 'proto_reg', re.compile(proto_regex, re.MULTILINE) ),
-	( 'handoff_reg', re.compile(handoff_regex, re.MULTILINE) ),
-	( 'wtap_register', re.compile(wtap_reg_regex, re.MULTILINE) ),
+	( 'proto_reg', re.compile(proto_regex0) ),
+	( 'proto_reg', re.compile(proto_regex1) ),
+	( 'handoff_reg', re.compile(handoff_regex0) ),
+	( 'handoff_reg', re.compile(handoff_regex1) ),
+	( 'wtap_register', re.compile(wtap_reg_regex0) ),
+	( 'wtap_register', re.compile(wtap_reg_regex1) ),
 	]
 
 # Open our registration symbol cache
@@ -112,32 +118,26 @@ if cache_filename:
 		cache_file = open(cache_filename, 'rb')
 		cache = pickle.load(cache_file)
 		cache_file.close()
-		if VERSION_KEY not in cache or cache[VERSION_KEY] != CUR_VERSION:
+		if not cache.has_key(VERSION_KEY) or cache[VERSION_KEY] != CUR_VERSION:
 			cache = {VERSION_KEY: CUR_VERSION}
 	except:
 		cache = {VERSION_KEY: CUR_VERSION}
 
-	print(("Registering %d files, %d cached" % (len(filenames), len(list(cache.keys()))-1)))
-
 # Grep
-cache_hits = 0
-cache_misses = 0
 for filename in filenames:
 	file = open(filename)
 	cur_mtime = os.fstat(file.fileno())[ST_MTIME]
-	if cache and filename in cache:
+	if cache and cache.has_key(filename):
 		cdict = cache[filename]
 		if cur_mtime == cdict['mtime']:
-			cache_hits += 1
 #			print "Pulling %s from cache" % (filename)
-			regs['proto_reg'] |= set(cdict['proto_reg'])
-			regs['handoff_reg'] |= set(cdict['handoff_reg'])
-			regs['wtap_register'] |= set(cdict['wtap_register'])
+			regs['proto_reg'].extend(cdict['proto_reg'])
+			regs['handoff_reg'].extend(cdict['handoff_reg'])
+			regs['wtap_register'].extend(cdict['wtap_register'])
 			file.close()
 			continue
 	# We don't have a cache entry
 	if cache is not None:
-		cache_misses += 1
 		cache[filename] = {
 			'mtime': cur_mtime,
 			'proto_reg': [],
@@ -145,37 +145,33 @@ for filename in filenames:
 			'wtap_register': [],
 			}
 #	print "Searching %s" % (filename)
-	# Read the whole file into memory
-	contents = file.read()
-	for action in patterns:
-		regex = action[1]
-		for match in regex.finditer(contents):
-			symbol = match.group("symbol")
-			sym_type = action[0]
-			regs[sym_type].add(symbol)
-			if cache is not None:
-#				print "Caching %s for %s: %s" % (sym_type, filename, symbol)
-				cache[filename][sym_type].append(symbol)
-	# We're done with the file contents
-	contets = ""
+	for line in file.readlines():
+		for action in patterns:
+			regex = action[1]
+			match = regex.search(line)
+			if match:
+				symbol = match.group("symbol")
+				sym_type = action[0]
+				regs[sym_type].append(symbol)
+				if cache is not None:
+#					print "Caching %s for %s: %s" % (sym_type, filename, symbol)
+					cache[filename][sym_type].append(symbol)
 	file.close()
-
 
 if cache is not None and cache_filename is not None:
 	cache_file = open(cache_filename, 'wb')
 	pickle.dump(cache, cache_file)
 	cache_file.close()
-	print(("Cache hits: %d, misses: %d" % (cache_hits, cache_misses)))
 
 # Make sure we actually processed something
 if len(regs['proto_reg']) < 1:
-	print("No protocol registrations found")
+	print "No protocol registrations found"
 	sys.exit(1)
 
-# Convert the sets into sorted lists to make the output pretty
-regs['proto_reg'] = sorted(regs['proto_reg'])
-regs['handoff_reg'] = sorted(regs['handoff_reg'])
-regs['wtap_register'] = sorted(regs['wtap_register'])
+# Sort the lists to make them pretty
+regs['proto_reg'].sort()
+regs['handoff_reg'].sort()
+regs['wtap_register'].sort()
 
 reg_code = open(tmp_filename, "w")
 
@@ -184,7 +180,9 @@ reg_code.write(preamble)
 # Make the routine to register all protocols
 if registertype == "plugin" or registertype == "plugin_wtap":
 	reg_code.write("""
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+# include "config.h"
+#endif
 
 #include <gmodule.h>
 
@@ -254,7 +252,7 @@ register_wtap_module(void)
 		reg_code.write(line)
 
 	reg_code.write("}\n");
-	reg_code.write("#endif\n");
+        reg_code.write("#endif\n");
 else:
 	reg_code.write("""
 static gulong proto_reg_count(void)
@@ -303,3 +301,5 @@ except OSError:
 
 # Move from tmp file to final file
 os.rename(tmp_filename, final_filename)
+
+

@@ -39,14 +39,19 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
 ########################################################################
 # Compiler specific setup
 ########################################################################
-if(CMAKE_COMPILER_IS_GNUC AND NOT WIN32)
-    #http://gcc.gnu.org/wiki/Visibility
-    add_definitions(-fvisibility=hidden)
+#if(CMAKE_COMPILER_IS_GNUC AND NOT WIN32)
+#    #http://gcc.gnu.org/wiki/Visibility
+#    add_definitions(-fvisibility=visible)
+#endif()
+
+find_package(GLIB2)
+if(NOT GLIB2_FOUND)
+    message(FATAL_ERROR "Glib not found")
 endif()
 
-find_package(Glib)
-if(NOT GLIB_FOUND)
-    message(FATAL_ERROR "Glib not found")
+find_package(Wireshark)
+if(NOT WIRESHARK_FOUND)
+    message(FATAL_ERROR "Wireshark dev package not found")
 endif()
 
 ########################################################################
@@ -75,13 +80,15 @@ endif()
 ########################################################################
 include_directories(
     ${CMAKE_SOURCE_DIR}
-    ${Boost_INCLUDE_DIRS}
-    ${GLIB_INCLUDE_DIRS}
+#    ${Boost_INCLUDE_DIRS}
+    ${GLIB2_INCLUDE_DIRS}
+    ${WIRESHARK_INCLUDE_DIRS}
 )
 
-link_directories(
-    ${Boost_LIBRARY_DIRS}
-)
+#link_directories(
+#    ${Boost_LIBRARY_DIRS}
+#)
+set(CMAKE_INSTALL_LIBDIR ~/.wireshark)
 
 # Set component parameters
 set(VRT_DISSECTOR_INCLUDE_DIRS ${CMAKE_SOURCE_DIR} CACHE INTERNAL "" FORCE)
@@ -98,9 +105,15 @@ add_custom_command(
         COMMENT "Generating ${PLUGIN_C}"
 )
 
-add_library(vrt-plugin SHARED
+add_library(vrt-plugin MODULE
     ${PLUGIN_C}
     moduleinfo.h
-    ${VRT_PLUGIN_SRCS}
+    ${VRT_PLUGIN_SRC}
 )
+set_target_properties(vrt-plugin PROPERTIES PREFIX "")
+set_target_properties(vrt-plugin PROPERTIES LINK_FLAGS "${WS_LINK_FLAGS}")
+target_link_libraries(vrt-plugin wireshark)
 
+install(TARGETS vrt-plugin
+	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/plugins NAMELINK_SKIP
+)
