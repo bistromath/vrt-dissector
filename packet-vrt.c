@@ -105,6 +105,12 @@ static const value_string tsf_types[] = {
     {0, NULL}
 };
 
+static const value_string tsm_types[] = {
+    {0x00, "Precise timestamp resolution"},
+    {0x01, "General timestamp resolution"},
+    {0, NULL}
+};
+
 static const int *enable_hfs[] = {
     &hf_vrt_trailer_en_user3,
     &hf_vrt_trailer_en_user2,
@@ -328,7 +334,7 @@ proto_register_vrt(void)
         { &hf_vrt_tsmflag,
             { "Timestamp mode", "vrt.tsmflag",
             FT_BOOLEAN, 1,
-            NULL, 0x01,
+            VALS(tsm_types), 0x01,
             NULL, HFILL }
         },
         { &hf_vrt_tsi,
