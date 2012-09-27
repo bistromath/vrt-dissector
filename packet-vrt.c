@@ -190,6 +190,7 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 
 void dissect_header(tvbuff_t *tvb, proto_tree *tree)
 {
+    DISSECTOR_ASSERT(tvb_length_remaining(tvb, 0) >= 4);
     int offset = 0;
     proto_item *hdr_item;
     proto_tree *hdr_tree;
@@ -209,6 +210,7 @@ void dissect_header(tvbuff_t *tvb, proto_tree *tree)
 
 void dissect_trailer(tvbuff_t *tvb, proto_tree *tree, int offset)
 {
+    DISSECTOR_ASSERT(tvb_length_remaining(tvb, offset) >= 4);
     proto_item *enable_item, *ind_item, *trailer_item;
     proto_tree *enable_tree, *ind_tree, *trailer_tree;
     trailer_item = proto_tree_add_item(tree, hf_vrt_trailer, tvb, offset, 4, ENC_BIG_ENDIAN);
