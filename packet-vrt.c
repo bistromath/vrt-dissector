@@ -113,10 +113,13 @@ static const int *ind_hfs[] = {
     &hf_vrt_trailer_ind_caltime
 };
 
+void dissect_header(tvbuff_t *tvb, proto_tree *tree);
+void dissect_trailer(tvbuff_t *tvb, proto_tree *tree, int offset);
+
 static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 {
-    proto_tree *hdr_tree, *vrt_tree, *trailer_tree, *enable_tree, *ind_tree;
-    proto_item *ti, *hdr_item, *trailer_item, *enable_item, *ind_item;
+    proto_tree *vrt_tree, *trailer_tree, *enable_tree, *ind_tree;
+    proto_item *ti, *trailer_item, *enable_item, *ind_item;
     
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "VITA 49");
     col_clear(pinfo->cinfo,COL_INFO);
@@ -141,19 +144,8 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
         ti = proto_tree_add_item(tree, proto_vrt, tvb, 0, -1, ENC_NA);
         vrt_tree = proto_item_add_subtree(ti, ett_vrt);
 
-        hdr_item = proto_tree_add_item(vrt_tree, hf_vrt_header, tvb, offset, 4, ENC_BIG_ENDIAN);
-        
-        hdr_tree = proto_item_add_subtree(hdr_item, ett_header);
-        proto_tree_add_item(hdr_tree, hf_vrt_type, tvb, offset, 1, ENC_NA);
-        proto_tree_add_item(hdr_tree, hf_vrt_cidflag, tvb, offset, 1, ENC_NA);
-        proto_tree_add_item(hdr_tree, hf_vrt_tflag, tvb, offset, 1, ENC_NA);
-        offset += 1;
-        proto_tree_add_item(hdr_tree, hf_vrt_tsi, tvb, offset, 1, ENC_NA);
-        proto_tree_add_item(hdr_tree, hf_vrt_tsf, tvb, offset, 1, ENC_NA);
-        proto_tree_add_item(hdr_tree, hf_vrt_seq, tvb, offset, 1, ENC_NA);
-        offset += 1;
-        proto_tree_add_item(hdr_tree, hf_vrt_len, tvb, offset, 2, ENC_BIG_ENDIAN);
-        offset += 2;
+        dissect_header(tvb, vrt_tree);
+        offset += 4;
 
         //header's done! if SID (last bit of type), put the stream ID here
         if(sidflag) {
@@ -187,35 +179,64 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
         offset += nsamps*4;
 
         if(tflag) {
-            trailer_item = proto_tree_add_item(vrt_tree, hf_vrt_trailer, tvb, offset, 4, ENC_BIG_ENDIAN);
-            trailer_tree = proto_item_add_subtree(trailer_item, ett_trailer);
-
-            //grab the indicator enables and the indicators
-            //only display enables, indicators which are enabled
-            enable_item = proto_tree_add_item(trailer_tree, hf_vrt_trailer_enables, tvb, offset, 2, ENC_NA);
-            ind_item = proto_tree_add_item(trailer_tree, hf_vrt_trailer_ind, tvb, offset+1, 2, ENC_NA);
-            //grab enables
-            guint16 en_bits = (tvb_get_ntohs(tvb, offset) & 0xFFF0) >> 4;
-            if(en_bits) {
-                enable_tree = proto_item_add_subtree(enable_item, ett_ind_enables);
-                ind_tree = proto_item_add_subtree(ind_item, ett_indicators);
-                gint16 i=11;
-                for(i; i>=0; i--) {
-                    if(en_bits & (1<<i)) {
-                        proto_tree_add_item(enable_tree, *enable_hfs[i], tvb, offset+(i<3), 1, ENC_NA);
-                        proto_tree_add_item(ind_tree, *ind_hfs[i], tvb, offset+(i<8)+1, 1, ENC_NA);
-                    }
-                }
-            }
-            offset += 2;
-            proto_tree_add_item(trailer_tree, hf_vrt_trailer_e, tvb, offset, 1, ENC_NA);
-            proto_tree_add_item(trailer_tree, hf_vrt_trailer_acpc, tvb, offset, 1, ENC_NA);
+            dissect_trailer(tvb, vrt_tree, offset);
         }
         
 
     } else { //we're being asked for a summary
 
     }
+}
+
+void dissect_header(tvbuff_t *tvb, proto_tree *tree)
+{
+    int offset = 0;
+    proto_item *hdr_item;
+    proto_tree *hdr_tree;
+    hdr_item = proto_tree_add_item(tree, hf_vrt_header, tvb, offset, 4, ENC_BIG_ENDIAN);
+        
+    hdr_tree = proto_item_add_subtree(hdr_item, ett_header);
+    proto_tree_add_item(hdr_tree, hf_vrt_type, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(hdr_tree, hf_vrt_cidflag, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(hdr_tree, hf_vrt_tflag, tvb, offset, 1, ENC_NA);
+    offset += 1;
+    proto_tree_add_item(hdr_tree, hf_vrt_tsi, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(hdr_tree, hf_vrt_tsf, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(hdr_tree, hf_vrt_seq, tvb, offset, 1, ENC_NA);
+    offset += 1;
+    proto_tree_add_item(hdr_tree, hf_vrt_len, tvb, offset, 2, ENC_BIG_ENDIAN);
+}
+
+void dissect_trailer(tvbuff_t *tvb, proto_tree *tree, int offset)
+{
+    proto_item *enable_item, *ind_item, *trailer_item;
+    proto_tree *enable_tree, *ind_tree, *trailer_tree;
+    trailer_item = proto_tree_add_item(tree, hf_vrt_trailer, tvb, offset, 4, ENC_BIG_ENDIAN);
+    trailer_tree = proto_item_add_subtree(trailer_item, ett_trailer);
+
+    //grab the indicator enables and the indicators
+    //only display enables, indicators which are enabled
+    enable_item = proto_tree_add_item(trailer_tree, hf_vrt_trailer_enables, tvb, offset, 2, ENC_NA);
+    ind_item = proto_tree_add_item(trailer_tree, hf_vrt_trailer_ind, tvb, offset+1, 2, ENC_NA);
+    //grab enable bits
+    guint16 en_bits = (tvb_get_ntohs(tvb, offset) & 0xFFF0) >> 4;
+
+    //if there's any enables, start trees for enable bits and for indicators
+    //only enables and indicators which are enabled get printed.
+    if(en_bits) {
+        enable_tree = proto_item_add_subtree(enable_item, ett_ind_enables);
+        ind_tree = proto_item_add_subtree(ind_item, ett_indicators);
+        gint16 i=11;
+        for(i; i>=0; i--) {
+            if(en_bits & (1<<i)) {
+                proto_tree_add_item(enable_tree, *enable_hfs[i], tvb, offset+(i<3), 1, ENC_NA);
+                proto_tree_add_item(ind_tree, *ind_hfs[i], tvb, offset+(i<8)+1, 1, ENC_NA);
+            }
+        }
+    }
+    offset += 2;
+    proto_tree_add_item(trailer_tree, hf_vrt_trailer_e, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(trailer_tree, hf_vrt_trailer_acpc, tvb, offset, 1, ENC_NA);
 }
 
 void
