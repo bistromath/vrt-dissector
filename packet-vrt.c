@@ -141,7 +141,7 @@ static const int *ind_hfs[] = {
     &hf_vrt_trailer_ind_caltime
 };
 
-void dissect_header(tvbuff_t *tvb, proto_tree *tree, int type);
+void dissect_header(tvbuff_t *tvb, proto_tree *tree, int type, int offset);
 void dissect_trailer(tvbuff_t *tvb, proto_tree *tree, int offset);
 void dissect_cid(tvbuff_t *tvb, proto_tree *tree, int offset);
 
@@ -153,32 +153,35 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "VITA 49");
     col_clear(pinfo->cinfo,COL_INFO);
 
+    int offset = 0;
+    // HACK to support UHD's weird header offset on data packets.
+    if (tvb_get_guint8(tvb, 0) == 0) offset += 4;
+
     //get packet type
-    guint8 type = tvb_get_guint8(tvb, 0) >> 4;
+    guint8 type = tvb_get_guint8(tvb, offset) >> 4;
     col_set_str(pinfo->cinfo, COL_INFO, val_to_str(type, packet_types, "Reserved packet type (0x%02x)"));
 
     //get SID, CID, T, TSI, and TSF flags
     guint8 sidflag = (type & 1) || (type == 4);
-    guint8 cidflag = (tvb_get_guint8(tvb, 0) >> 3) & 0x01;
+    guint8 cidflag = (tvb_get_guint8(tvb, offset) >> 3) & 0x01;
     //tflag is in data packets but not context packets
-    guint8 tflag =   (tvb_get_guint8(tvb, 0) >> 2) & 0x01;
+    guint8 tflag =   (tvb_get_guint8(tvb, offset) >> 2) & 0x01;
     if(type == 4) tflag = 0; // this should be unnecessary but we do it
                              // just in case
     //tsmflag is in context packets but not data packets
-    guint8 tsmflag = (tvb_get_guint8(tvb, 0) >> 0) & 0x01;
-    guint8 tsiflag = (tvb_get_guint8(tvb, 1) >> 6) & 0x03;
-    guint8 tsfflag = (tvb_get_guint8(tvb, 1) >> 4) & 0x03;
-    guint16 len = tvb_get_ntohs(tvb, 2);
+    guint8 tsmflag = (tvb_get_guint8(tvb, offset) >> 0) & 0x01;
+    guint8 tsiflag = (tvb_get_guint8(tvb, offset+1) >> 6) & 0x03;
+    guint8 tsfflag = (tvb_get_guint8(tvb, offset+1) >> 4) & 0x03;
+    guint16 len = tvb_get_ntohs(tvb, offset+2);
     gint16 nsamps = len - 1 - sidflag - cidflag*2 - tsiflag - tsfflag*2 - tflag;
-    DISSECTOR_ASSERT(tvb_length_remaining(tvb, 0) >= len * 4);
+    DISSECTOR_ASSERT(tvb_length_remaining(tvb, offset) >= len * 4);
 
-    int offset = 0;
 
     if(tree) { //we're being asked for details
-        ti = proto_tree_add_item(tree, proto_vrt, tvb, 0, -1, ENC_NA);
+        ti = proto_tree_add_item(tree, proto_vrt, tvb, offset, -1, ENC_NA);
         vrt_tree = proto_item_add_subtree(ti, ett_vrt);
 
-        dissect_header(tvb, vrt_tree, type);
+        dissect_header(tvb, vrt_tree, type, offset);
         offset += 4;
 
         //header's done! if SID (last bit of type), put the stream ID here
@@ -229,10 +232,10 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     }
 }
 
-void dissect_header(tvbuff_t *tvb, proto_tree *tree, int type)
+void dissect_header(tvbuff_t *tvb, proto_tree *tree, int type, int _offset)
 {
-    DISSECTOR_ASSERT(tvb_length_remaining(tvb, 0) >= 4);
-    int offset = 0;
+    DISSECTOR_ASSERT(tvb_length_remaining(tvb, _offset) >= 4);
+    int offset = _offset;
     proto_item *hdr_item;
     proto_tree *hdr_tree;
     hdr_item = proto_tree_add_item(tree, hf_vrt_header, tvb, offset, 4, ENC_BIG_ENDIAN);
