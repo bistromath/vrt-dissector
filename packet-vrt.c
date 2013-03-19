@@ -154,6 +154,8 @@ static void dissect_vrt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     col_clear(pinfo->cinfo,COL_INFO);
 
     int offset = 0;
+    // HACK to support UHD's weird header offset on data packets.
+    if (tvb_get_guint8(tvb, 0) == 0) offset += 4;
 
     //get packet type
     guint8 type = tvb_get_guint8(tvb, offset) >> 4;
